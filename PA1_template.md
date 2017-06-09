@@ -1,6 +1,6 @@
 # Reproducible Research: Peer Assessment 1
 
-date: 2017, June 9th
+date: 2017, June 10th
 
 ### Introduction
 
@@ -17,6 +17,7 @@ First, let's include some useful libraries:
 
 ```r
 library(ggplot2)
+library(scales)
 library(grid)
 library(gridExtra)
 library(plyr)
@@ -28,14 +29,17 @@ library(reshape2)
 
 ### Loading and preprocessing the data
 
-Set working directory if necessary, unzip and read the file "activity.csv". Format the date column.
+Set working directory if necessary, unzip and read the file "activity.csv". 
+Format the date column and translate the interval into datetime format. The interval format
+is *HHMM*, with leading zeros removed because the column class is integer.
 
 
 ```r
 #setwd("C:/Users/YourWD")
 unzip("activity.zip")
 data<-read.csv(file="./activity.csv", header = TRUE, na.strings = "NA", stringsAsFactors = FALSE)
-data$date=as.POSIXct(data$date, format="%Y-%m-%d")
+data$date<-as.POSIXct(data$date, format="%Y-%m-%d")
+data$time<-as.POSIXct(strptime(formatC(data$interval, width=4, flag="0"), format="%H%M"))
 ```
 
 ### What is mean total number of steps taken per day?
@@ -115,27 +119,28 @@ interval and find the interval with the highest average activity:
 
 
 ```r
-df.int<-ddply(data, .(interval), summarize, MperInt=mean(steps, na.rm=TRUE))
-tmax<-df.int[which(df.int$MperInt==max(df.int$MperInt)),]$interval
-mins=tmax%%60
-hours=tmax%/%60
+df.int<-ddply(data, .(interval,time), summarize, MperInt=mean(steps, na.rm=TRUE))
+tmax<-df.int[which(df.int$MperInt==max(df.int$MperInt)),]$time
+mins<-as.POSIXlt(tmax)$min
+hours<-as.POSIXlt(tmax)$hour
 paste(hours, "h", mins, "min", sep=" ")
 ```
 
 ```
-## [1] "13 h 55 min"
+## [1] "8 h 35 min"
 ```
 
-The interval of highest activity was typically 13:55-14:00. Now we plot the full
+The interval of highest activity was typically 08:35-08:40. Now we plot the full
 daily pattern on linear and logarithmic scale together with a *loess* smoothing
 function.
 
 
 ```r
-p0<-ggplot(df.int, aes(interval, MperInt))+geom_line()+ mytheme+
-        labs(x="Time of day [min]", y="Average steps")+
+p0<-ggplot(df.int, aes(time, MperInt))+geom_line()+ mytheme+
+        scale_x_datetime(date_labels="%H:%M")+
+        labs(x="Time of day [HH:MM]", y="Average steps")+
         geom_smooth(method="loess", span=0.2, na.rm=TRUE)+
-        geom_vline(aes(xintercept=tmax), color="red", lwd=1.5, lty="dashed")+
+        geom_vline(aes(xintercept=as.numeric(tmax)), color="red", lwd=1.5, lty="dashed")+
         annotate("text", x=tmax, y=250,hjust=-0.15,color="red", size=5,
                  label=paste(hours, "h", mins, "min", sep=" "))
 p1<-p0+scale_y_log10()
@@ -173,11 +178,11 @@ data.imp[which(is.na(data.imp$steps)),]$steps<-data.imp[which(is.na(data.imp$ste
 ```
 
 Now rearrange the columns to obtain a new dataset that is equal to the original dataset
-but with the missing data filled in.
+but with the missing data filled in. In addition, we keep the intervals converted to datetime.
 
 
 ```r
-data.imp<-data.imp[,c("steps", "date", "interval")]
+data.imp<-data.imp[,c("steps", "date", "interval", "time")]
 ```
 
 Now we re-plot the histogram of total number of steps per day:
@@ -247,10 +252,11 @@ the daily activit patterns separately for workdays and weekends:
 
 
 ```r
-df.int.imp<-ddply(data.imp, .(cat,interval), summarize, MperInt=mean(steps, na.rm=TRUE))
+df.int.imp<-ddply(data.imp, .(cat,time), summarize, MperInt=mean(steps, na.rm=TRUE))
 
-ggplot(df.int.imp, aes(interval, MperInt))+geom_line()+ mytheme+facet_grid(cat~.)+
-       labs(x="Time of day [min]", y="Average steps per 5 min")+
+ggplot(df.int.imp, aes(time, MperInt))+geom_line()+ mytheme+facet_grid(cat~.)+
+       scale_x_datetime(date_labels="%H:%M")+
+        labs(x="Time of day [HH:MM]", y="Average steps per 5 min")+
         geom_hline(yintercept=0)+geom_smooth(method="loess", span=0.2, na.rm=TRUE)
 ```
 
@@ -261,10 +267,10 @@ in order to better identify the times of day, where the major differences can be
 
 
 ```r
-final<-dcast(df.int.imp, interval~cat)
+final<-dcast(df.int.imp,time~cat)
 final$diff<-final$weekend-final$weekday
-ggplot(final, aes(interval, diff))+geom_line()+ mytheme+
-        labs(x="Time of day [min]", y="Difference of steps per 5 min")+
+ggplot(final, aes(time, diff))+geom_line()+ mytheme+scale_x_datetime(date_labels="%H:%M")+
+        labs(x="Time of day [HH:MM]", y="Difference of steps per 5 min")+
         geom_hline(yintercept=0)+geom_smooth(method="loess", span=0.2, na.rm=TRUE)+
         ggtitle(label="weekend minus weekday activity profile")
 ```
